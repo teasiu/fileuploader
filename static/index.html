@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>海纳思系统上传工具</title>
+    <!-- 本地样式 -->
+    <link href="/static/css/style.css" rel="stylesheet">
+    <!-- 本地字体图标 -->
+    <link href="/static/css/font-awesome.min.css" rel="stylesheet">
+    <!-- 本地Bootstrap样式 -->
+    <link href="/static/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container-fluid vh-100 d-flex flex-column">
+        <!-- 顶部导航栏 -->
+        <header class="bg-dark text-white py-3 shadow">
+            <div class="container-fluid">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <div>
+                            <h1 class="h4 mb-0">
+                                <i class="fa fa-cloud-upload mr-2"></i>海纳思系统上传工具
+                            </h1>
+                            <p class="text-sm text-muted mt-1">说明：仅支持上传和管理/var/www/html/files/下的文件和创建挂载在/mnt/下的磁盘的文件</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <span id="current-path" class="text-muted">当前路径:/</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要内容区 -->
+        <main class="flex-grow-1 d-flex overflow-hidden">
+            <!-- 左侧目录树 -->
+            <div class="col-md-3 bg-secondary bg-opacity-10 border-right border-gray-300 overflow-y-auto">
+                <div class="p-3 border-bottom border-gray-300">
+                    <h2 class="h5 mb-0">目录结构</h2>
+                </div>
+                <div id="directory-tree" class="p-2">
+                    <!-- 目录树将通过JavaScript动态生成 -->
+                    <div class="text-center text-muted py-5">
+                        <i class="fa fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-2">加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧文件操作区 -->
+            <div class="col-md-9 d-flex flex-column overflow-hidden">
+                <!-- 工具栏 -->
+                <div class="bg-white border-bottom border-gray-300 p-3">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <div class="btn-group" role="group">
+                                <button id="btn-upload" type="button" class="btn btn-primary">
+                                    <i class="fa fa-upload mr-1"></i>上传文件
+                                </button>
+                                <button id="btn-create-dir" type="button" class="btn btn-secondary">
+                                    <i class="fa fa-folder mr-1"></i>创建目录
+                                </button>
+                                <button id="btn-create-symlink" type="button" class="btn btn-secondary">
+                                    <i class="fa fa-link mr-1"></i>创建链接
+                                </button>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="input-group">
+                                <input id="search-input" type="text" class="form-control" placeholder="搜索文件...">
+                                <button id="btn-search" type="button" class="btn btn-outline-secondary">
+                                    <i class="fa fa-search"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 文件列表 -->
+                <div id="file-list" class="flex-grow-1 overflow-y-auto p-4">
+                    <!-- 文件列表将通过JavaScript动态生成 -->
+                    <div class="text-center text-muted py-5">
+                        <i class="fa fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-2">加载中...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 上传文件模态框 -->
+    <div id="upload-modal" class="modal fade" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">上传文件</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="upload-path" class="form-label">上传路径</label>
+                        <input type="text" id="upload-path" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="file-input" class="form-label">选择文件</label>
+                        <input type="file" id="file-input" class="form-control" multiple>
+                    </div>
+                    <div id="upload-progress" class="upload-progress d-none">
+                        <div class="mb-1">
+                            <span id="upload-filename" class="text-sm text-muted"></span>
+                            <span id="upload-percentage" class="text-sm text-muted float-end"></span>
+                        </div>
+                        <div class="progress">
+                            <div id="upload-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button id="btn-submit-upload" type="button" class="btn btn-primary">上传</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建目录模态框 -->
+    <div id="create-dir-modal" class="modal fade" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">创建目录</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="create-dir-path" class="form-label">父目录</label>
+                        <input type="text" id="create-dir-path" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="dir-name" class="form-label">目录名称</label>
+                        <input type="text" id="dir-name" class="form-control" placeholder="请输入目录名称">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button id="btn-submit-create-dir" type="button" class="btn btn-primary">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建软链接模态框 -->
+    <div id="create-symlink-modal" class="modal fade" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">创建软链接</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="create-symlink-path" class="form-label">父目录</label>
+                        <input type="text" id="create-symlink-path" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label for="symlink-name" class="form-label">链接名称</label>
+                        <input type="text" id="symlink-name" class="form-control" placeholder="请输入自定义链接名称">
+                    </div>
+                    <div class="mb-3">
+                        <label for="symlink-target" class="form-label">目标路径</label>
+                        <input type="text" id="symlink-target" class="form-control" placeholder="请输入目标路径-必须/mnt/开头的真实文件夹">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button id="btn-submit-create-symlink" type="button" class="btn btn-primary">创建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 容器 -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- 隐藏的文件输入框（用于拖拽上传） -->
+    <input type="file" id="hidden-file-input" multiple class="d-none">
+
+    <!-- 本地JavaScript库 -->
+    <script src="/static/js/jquery-3.6.0.min.js"></script>
+    <script src="/static/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/js/axios.min.js"></script>
+    <!-- 自定义脚本 -->
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
