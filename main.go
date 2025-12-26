@@ -1,17 +1,37 @@
 package main
 
 import (
+	"embed"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// 修复：包装bufio.Reader和ReadCloser，显式实现Read方法消除歧义
+type bufferedReadCloser struct {
+	bufReader *bufio.Reader   // 改为显式字段，而非嵌入
+	rawCloser io.ReadCloser   // 原ReadCloser
+}
+
+// 显式实现Read方法（调用bufio.Reader的Read）
+func (brc *bufferedReadCloser) Read(p []byte) (int, error) {
+	return brc.bufReader.Read(p)
+}
+
+// 实现Close方法（调用原ReadCloser的Close）
+func (brc *bufferedReadCloser) Close() error {
+	return brc.rawCloser.Close()
+}
 
 // 配置
 var (
@@ -22,6 +42,11 @@ var (
 	// 程序根目录
 	appRootDir = "/opt/fileuploader"
 )
+
+// 新增：嵌入静态文件（解决staticFiles未定义问题）
+// 假设你的静态文件放在项目的static目录下，根据实际路径调整
+//go:embed static/*
+var staticFiles embed.FS // 定义staticFiles变量，匹配代码中使用的staticFiles.Open
 
 // FileInfo 文件信息结构
 type FileInfo struct {
@@ -233,7 +258,7 @@ func handleDirectoryTree(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleFileUpload 处理文件上传（改进：限制请求大小，文件名清洗，确保目录存在）
+// handleFileUpload 处理文件上传（流式处理+超时容错+缓冲区优化）
 func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
@@ -243,17 +268,67 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	// 限制整个请求体大小
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 
+	// 修复：创建带缓冲区的ReadCloser（无方法歧义）
+	// 1MB缓冲区提升大文件读取性能
+	bufReader := bufio.NewReaderSize(r.Body, 1024*1024)
+	r.Body = &bufferedReadCloser{
+		bufReader: bufReader,
+		rawCloser: r.Body, // 原r.Body（io.ReadCloser）
+	}
+
 	log.Printf("收到文件上传请求: 方法=%s, 内容类型=%s", r.Method, r.Header.Get("Content-Type"))
 
-	// ParseMultipartForm 的参数是内存缓冲限制（过大的文件会使用临时文件）
-	if err := r.ParseMultipartForm(memoryBufferSize); err != nil {
-		log.Printf("解析multipart表单失败: %v", err)
+	// 解析 multipart 读取器（流式处理，不产生临时文件）
+	reader, err := r.MultipartReader()
+	if err != nil {
+		log.Printf("解析multipart读取器失败: %v", err)
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("无法解析请求: %v", err))
 		return
 	}
 
-	// path 参数（相对 root）
-	pathParam := r.FormValue("path")
+	// 先读取 path 参数（表单字段）
+	var pathParam string
+	var part *multipart.Part
+	for {
+		// 增加读取Part的超时日志
+		part, err = reader.NextPart()
+		if err != nil {
+			if err == io.EOF {
+				break // 没有找到path参数
+			}
+			log.Printf("读取表单部分失败: %v", err)
+			// 不直接返回，仅记录错误，继续尝试（适配批量上传）
+			if strings.Contains(err.Error(), "timeout") {
+				writeError(w, http.StatusRequestTimeout, "读取请求参数超时，请重试")
+				return
+			}
+			writeError(w, http.StatusBadRequest, "读取请求数据失败")
+			return
+		}
+
+		// 处理非文件字段（获取path参数）
+		if part.FileName() == "" {
+			fieldName := part.FormName()
+			if fieldName == "path" {
+				// 读取path参数值
+				pathBytes, err := io.ReadAll(part)
+				if err != nil {
+					log.Printf("读取path参数失败: %v", err)
+					writeError(w, http.StatusBadRequest, "获取上传路径失败")
+					return
+				}
+				pathParam = string(pathBytes)
+			}
+			// 关闭当前part
+			_ = part.Close()
+			continue
+		}
+
+		// 遇到文件字段则跳出循环（先处理完path参数）
+		break
+	}
+
+	// 设置默认路径
 	if pathParam == "" {
 		pathParam = "."
 	}
@@ -274,68 +349,54 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files := r.MultipartForm.File["files"]
-	if len(files) == 0 {
+	var errorsList []string
+	var hasFiles bool // 标记是否有文件被处理
+
+	// 处理第一个文件（如果上面循环中已经遇到）
+	if part != nil && part.FileName() != "" {
+		hasFiles = true
+		processFilePart(part, fullPath, maxUploadSize, &errorsList)
+	}
+
+	// 处理剩余的文件部分（优化：增加超时容错）
+	for {
+		part, err = reader.NextPart()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			// 优化：区分超时错误，仅记录不中断（批量上传）
+			errMsg := fmt.Sprintf("读取文件部分失败: %v", err)
+			log.Printf(errMsg)
+			errorsList = append(errorsList, errMsg)
+			// 如果是超时错误，尝试继续读取下一个Part（而非直接break）
+			if !strings.Contains(err.Error(), "timeout") {
+				break
+			}
+			continue // 超时则跳过当前Part，继续处理下一个
+		}
+
+		// 只处理文件字段（忽略其他表单字段）
+		filename := part.FileName()
+		if filename == "" {
+			_ = part.Close()
+			continue
+		}
+
+		hasFiles = true
+		processFilePart(part, fullPath, maxUploadSize, &errorsList)
+	}
+
+	// 检查是否有文件被处理
+	if !hasFiles {
 		log.Printf("未找到上传的文件")
 		writeError(w, http.StatusBadRequest, "没有找到上传的文件")
 		return
 	}
 
-	var errorsList []string
-
-	for _, fileHeader := range files {
-		// 使用 Base 防止文件名中包含路径
-		cleanName := filepath.Base(fileHeader.Filename)
-		log.Printf("处理文件: %s (大小: %d 字节)", cleanName, fileHeader.Size)
-
-		if fileHeader.Size > maxUploadSize {
-			errMsg := fmt.Sprintf("文件 %s 太大", cleanName)
-			log.Printf(errMsg)
-			errorsList = append(errorsList, errMsg)
-			continue
-		}
-
-		src, err := fileHeader.Open()
-		if err != nil {
-			errMsg := fmt.Sprintf("无法打开文件 %s: %v", cleanName, err)
-			log.Printf(errMsg)
-			errorsList = append(errorsList, errMsg)
-			continue
-		}
-
-		dstPath := filepath.Join(fullPath, cleanName)
-		dst, err := os.Create(dstPath)
-		if err != nil {
-			src.Close()
-			errMsg := fmt.Sprintf("无法创建文件 %s: %v", cleanName, err)
-			log.Printf(errMsg)
-			errorsList = append(errorsList, errMsg)
-			continue
-		}
-
-		// 复制并立即关闭资源
-		if _, err = io.Copy(dst, src); err != nil {
-			src.Close()
-			dst.Close()
-			errMsg := fmt.Sprintf("无法保存文件 %s: %v", cleanName, err)
-			log.Printf(errMsg)
-			errorsList = append(errorsList, errMsg)
-			continue
-		}
-		src.Close()
-		dst.Close()
-
-		// 设置合理权限（可按需调整）
-		if err := os.Chmod(dstPath, 0644); err != nil {
-			log.Printf("设置权限失败: %v", err)
-		}
-
-		log.Printf("文件上传成功: %s -> %s", cleanName, dstPath)
-	}
-
 	resp := map[string]interface{}{
 		"success": len(errorsList) == 0,
-		"message": "文件上传完成",
+		"message": "文件上传完成（部分文件可能失败）",
 	}
 	if len(errorsList) > 0 {
 		resp["errors"] = errorsList
@@ -343,6 +404,82 @@ func handleFileUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
+
+
+// 辅助函数：处理单个文件part
+func processFilePart(part *multipart.Part, fullPath string, maxSize int64, errorsList *[]string) {
+	defer part.Close() // 确保part被关闭
+
+	// 清洗文件名（防止路径注入）
+	cleanName := filepath.Base(part.FileName())
+	log.Printf("处理文件: %s", cleanName)
+
+	// 修复：从Header获取Content-Length并解析（替代错误的part.Size()）
+	var contentLength int64 = 0
+	clHeader := part.Header.Get("Content-Length")
+	if clHeader != "" {
+		// 解析Content-Length为整数
+		cl, err := strconv.ParseInt(clHeader, 10, 64)
+		if err == nil {
+			contentLength = cl
+		} else {
+			log.Printf("无法解析文件 %s 的Content-Length: %v", cleanName, err)
+		}
+	}
+
+	// 检查文件大小（通过解析后的Content-Length）
+	if contentLength > 0 && contentLength > maxSize {
+		errMsg := fmt.Sprintf("文件 %s 太大（超过 %d GB）", cleanName, maxSize/(1024*1024*1024))
+		log.Printf(errMsg)
+		*errorsList = append(*errorsList, errMsg)
+		return
+	}
+
+	// 创建目标文件
+	dstPath := filepath.Join(fullPath, cleanName)
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		errMsg := fmt.Sprintf("无法创建文件 %s: %v", cleanName, err)
+		log.Printf(errMsg)
+		*errorsList = append(*errorsList, errMsg)
+		return
+	}
+	defer dst.Close()
+
+	// 流式复制（限制最大大小）
+	written, err := io.CopyN(dst, part, maxSize)
+	if err != nil && err != io.EOF {
+		// 复制过程中出错
+		errMsg := fmt.Sprintf("无法保存文件 %s: %v", cleanName, err)
+		log.Printf(errMsg)
+		*errorsList = append(*errorsList, errMsg)
+		// 清理不完整文件
+		_ = os.Remove(dstPath)
+		return
+	}
+
+	// 检查是否超过最大大小（Content-Length可能不可靠，通过实际写入量判断）
+	if written >= maxSize {
+		errMsg := fmt.Sprintf("文件 %s 太大（超过 %d GB）", cleanName, maxSize/(1024*1024*1024))
+		log.Printf(errMsg)
+		*errorsList = append(*errorsList, errMsg)
+		_ = os.Remove(dstPath)
+		return
+	}
+
+	// 刷新到磁盘
+	if err := dst.Sync(); err != nil {
+		log.Printf("文件同步到磁盘失败 %s: %v", cleanName, err)
+	}
+
+	// 设置权限
+	if err := os.Chmod(dstPath, 0644); err != nil {
+		log.Printf("设置权限失败 %s: %v", cleanName, err)
+	}
+
+	log.Printf("文件上传成功: %s -> %s（大小: %d 字节）", cleanName, dstPath, written)
+}
+
 
 // handleCreateDirectory 创建目录
 func handleCreateDirectory(w http.ResponseWriter, r *http.Request) {
@@ -635,15 +772,17 @@ func main() {
 	srv := &http.Server{
 		Addr:         listenAddr,
 		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 300 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		ReadTimeout:  1800 * time.Second,
+		WriteTimeout: 1800 * time.Second, // 大文件上传延长写入超时
+		IdleTimeout:  300 * time.Second,
+		ReadHeaderTimeout: 60 * time.Second,
 	}
 
-	log.Printf("文件上传服务启动 - 地址: %s, 上传目录: %s, 最大大小: %d MB",
-		listenAddr, rootDir, maxUploadSize/(1024*1024))
+	log.Printf("文件上传服务启动 - 地址: %s, 上传目录: %s, 最大大小: %d GB",
+		listenAddr, rootDir, maxUploadSize/(1024*1024*1024))
 
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("服务器启动失败: %v", err)
 	}
 }
+

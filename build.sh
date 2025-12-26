@@ -66,7 +66,7 @@ build_arch() {
     go build \
         -ldflags "-s -w" \
         -o "$OUTPUT_DIR/$output_name" \
-        main.go static.go
+        main.go
     
     # 检查构建结果
     if [ ! -f "$OUTPUT_DIR/$output_name" ]; then

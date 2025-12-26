@@ -655,7 +655,7 @@ function uploadFiles() {
     // 上传操作在模态框的提交按钮中处理
 }
 
-// 从输入框上传文件
+// 从输入框上传文件（核心上传函数，修改位置）
 function uploadFilesFromInput(input) {
     console.log('开始上传文件...');
     let path = $('#upload-path').val();
@@ -677,29 +677,28 @@ function uploadFilesFromInput(input) {
     $('#upload-progress').removeClass('d-none');
     console.log('显示上传进度条');
     
-    // 使用Axios上传
+    // 使用Axios上传（核心修改/确认区域）
     let apiUrl = apiBasePath + 'api/file/upload';
     console.log('开始发送POST请求到:', apiUrl);
     
     // 确保API基础路径正确
     if (!apiUrl.startsWith('http')) {
         if (!apiUrl.startsWith('/')) {
-            /*...*/
             apiUrl = '/' + apiUrl;
         }
     }
     
     console.log('最终API URL:', apiUrl);
     
+    // 【关键优化1：移除手动设置的Content-Type，让浏览器自动处理】
+    // 原代码中手动设置 'Content-Type': 'multipart/form-data' 可能导致boundary缺失，改为自动生成
     axios.post(apiUrl, formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data'
-        },
+        // 移除这行手动设置的header ↓
+        // headers: { 'Content-Type': 'multipart/form-data' },
+        // 保留进度条处理
         onUploadProgress: function(progressEvent) {
-            // 兼容 total 未定义或为0的情况
             const loaded = progressEvent.loaded || 0;
             const total = progressEvent.total || 0;
-            // 当 total 可用且大于0时，按百分比显示
             if (total > 0) {
                 let percentComplete = Math.round((loaded * 100) / total);
                 if (percentComplete < 0) percentComplete = 0;
@@ -707,18 +706,19 @@ function uploadFilesFromInput(input) {
                 $('#upload-progress-bar').css('width', percentComplete + '%').attr('aria-valuenow', percentComplete);
                 $('#upload-percentage').text(percentComplete + '%');
             } else {
-                // total 不可用：将进度条显示为“不可确定”动画状态（保留动画），
-                // 宽度设为100%以显示动画效果，但 aria-valuenow 设为 0（无具体百分比）
                 $('#upload-progress-bar').css('width', '100%').attr('aria-valuenow', 0);
-                // 使用格式化后的已上传字节数提示用户（例如 "1.2 MB 上传中"）
                 $('#upload-percentage').text(formatFileSize(loaded) + ' 上传中');
             }
             
-            // 显示当前上传的文件名（只显示第一个文件名以保持原有行为）
             if (input.files.length > 0) {
                 $('#upload-filename').text(input.files[0].name);
             }
-        }
+        },
+        // 【关键优化2：增加超时时间，适配大文件上传】
+        timeout: 0, // 0表示无超时（大文件上传需要足够时间）
+        // 【关键优化3：增加请求体大小限制（可选，适配后端的8GB限制）】
+        maxContentLength: 8 * 1024 * 1024 * 1024, // 8GB
+        maxBodyLength: 8 * 1024 * 1024 * 1024     // 8GB
     })
     .then(function(response) {
         console.log('上传请求成功，响应:', response.data);
@@ -736,10 +736,7 @@ function uploadFilesFromInput(input) {
         // 显示结果
         if (response.data.success) {
             showToast('文件上传成功', 'success');
-            console.log('上传成功，重新加载文件列表和目录树');
-            // 重新加载文件列表（使用上传时的路径）
             loadFileList(path);
-            // 重新加载目录树
             loadDirectoryTree();
         } else {
             let errorMsg = '文件上传失败';
@@ -762,7 +759,7 @@ function uploadFilesFromInput(input) {
         // 关闭模态框
         uploadModal.hide();
         
-        // 显示错误
+        // 优化错误提示
         let errorMsg = '文件上传失败';
         if (error.response) {
             errorMsg += ': ' + error.response.status + ' ' + error.response.statusText;
@@ -770,13 +767,14 @@ function uploadFilesFromInput(input) {
                 errorMsg += ' - ' + error.response.data.error;
             }
         } else if (error.request) {
-            errorMsg += ': 服务器无响应';
+            errorMsg += ': 服务器无响应（可能是文件过大/网络超时）';
         } else {
             errorMsg += ': ' + error.message;
         }
         showToast(errorMsg, 'error');
     });
 }
+
 
 // 创建目录
 function createDirectory() {
