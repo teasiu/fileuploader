@@ -684,6 +684,7 @@ function uploadFilesFromInput(input) {
     // 确保API基础路径正确
     if (!apiUrl.startsWith('http')) {
         if (!apiUrl.startsWith('/')) {
+            /*...*/
             apiUrl = '/' + apiUrl;
         }
     }
@@ -695,15 +696,27 @@ function uploadFilesFromInput(input) {
             'Content-Type': 'multipart/form-data'
         },
         onUploadProgress: function(progressEvent) {
-            if (progressEvent.total) {
-                let percentComplete = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-                $('#upload-progress-bar').css('width', percentComplete + '%');
+            // 兼容 total 未定义或为0的情况
+            const loaded = progressEvent.loaded || 0;
+            const total = progressEvent.total || 0;
+            // 当 total 可用且大于0时，按百分比显示
+            if (total > 0) {
+                let percentComplete = Math.round((loaded * 100) / total);
+                if (percentComplete < 0) percentComplete = 0;
+                if (percentComplete > 100) percentComplete = 100;
+                $('#upload-progress-bar').css('width', percentComplete + '%').attr('aria-valuenow', percentComplete);
                 $('#upload-percentage').text(percentComplete + '%');
-                
-                // 显示当前上传的文件名
-                if (input.files.length > 0) {
-                    $('#upload-filename').text(input.files[0].name);
-                }
+            } else {
+                // total 不可用：将进度条显示为“不可确定”动画状态（保留动画），
+                // 宽度设为100%以显示动画效果，但 aria-valuenow 设为 0（无具体百分比）
+                $('#upload-progress-bar').css('width', '100%').attr('aria-valuenow', 0);
+                // 使用格式化后的已上传字节数提示用户（例如 "1.2 MB 上传中"）
+                $('#upload-percentage').text(formatFileSize(loaded) + ' 上传中');
+            }
+            
+            // 显示当前上传的文件名（只显示第一个文件名以保持原有行为）
+            if (input.files.length > 0) {
+                $('#upload-filename').text(input.files[0].name);
             }
         }
     })
@@ -711,7 +724,7 @@ function uploadFilesFromInput(input) {
         console.log('上传请求成功，响应:', response.data);
         // 隐藏进度条
         $('#upload-progress').addClass('d-none');
-        $('#upload-progress-bar').css('width', '0%');
+        $('#upload-progress-bar').css('width', '0%').attr('aria-valuenow', 0);
         
         // 清空文件输入
         $('#file-input').val('');
@@ -740,7 +753,7 @@ function uploadFilesFromInput(input) {
         console.error('上传请求失败:', error);
         // 隐藏进度条
         $('#upload-progress').addClass('d-none');
-        $('#upload-progress-bar').css('width', '0%');
+        $('#upload-progress-bar').css('width', '0%').attr('aria-valuenow', 0);
         
         // 清空文件输入
         $('#file-input').val('');
