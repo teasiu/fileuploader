@@ -105,6 +105,19 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, ErrorResponse{Error: msg})
 }
 
+func isLoggedIn(r *http.Request) bool {
+	cookie, err := r.Cookie("logged_in")
+	return err == nil && cookie.Value == "1"
+}
+
+func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"loggedIn": isLoggedIn(r)})
+}
+
 func listDirectory(path string) ([]FileInfo, error) {
 	fullPath, err := ensurePathInRoot(path)
 	if err != nil {
@@ -689,6 +702,8 @@ func main() {
 	mux.HandleFunc("/filesuploader/api/directory/symlink", handleCreateSymlink)
 	mux.HandleFunc("/filesuploader/api/file/rename", handleRenameFile)
 	mux.HandleFunc("/filesuploader/api/file/delete/", handleDeleteFile)
+	mux.HandleFunc("/api/auth/status", handleAuthStatus)
+	mux.HandleFunc("/filesuploader/api/auth/status", handleAuthStatus)
 
 	srv := &http.Server{
 		Addr:              listenAddr,

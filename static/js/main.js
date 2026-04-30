@@ -6,6 +6,7 @@ let uploadModal = null;
 let createDirModal = null;
 let createSymlinkModal = null;
 let apiBasePath = ''; // API基础路径
+let loginCheckUrl = '/require_login.php';
 
 // 初始化函数
 $(document).ready(function() {
@@ -14,24 +15,28 @@ $(document).ready(function() {
     // 检测当前访问路径，自动设置API基础路径
     detectApiBasePath();
     console.log('检测到的API基础路径:', apiBasePath);
-    
-    // 初始化模态框
-    uploadModal = new bootstrap.Modal(document.getElementById('upload-modal'));
-    createDirModal = new bootstrap.Modal(document.getElementById('create-dir-modal'));
-    createSymlinkModal = new bootstrap.Modal(document.getElementById('create-symlink-modal'));
 
-    // 延迟加载数据，确保DOM完全就绪
-    setTimeout(function() {
-        console.log('开始加载数据...');
-        // 加载目录树和文件列表
-        loadDirectoryTree();
-        loadFileList(currentPath);
+    checkLoginStatus().then(function(loggedIn) {
+        if (!loggedIn) {
+            handleUnauthenticated();
+            return;
+        }
 
-        // 绑定事件
-        bindEvents();
-        
-        console.log('文件管理器初始化完成');
-    }, 100);
+        uploadModal = new bootstrap.Modal(document.getElementById('upload-modal'));
+        createDirModal = new bootstrap.Modal(document.getElementById('create-dir-modal'));
+        createSymlinkModal = new bootstrap.Modal(document.getElementById('create-symlink-modal'));
+
+        setTimeout(function() {
+            console.log('开始加载数据...');
+            loadDirectoryTree();
+            loadFileList(currentPath);
+            bindEvents();
+            console.log('文件管理器初始化完成');
+        }, 100);
+    }).catch(function(err) {
+        console.error('登录状态检查失败:', err);
+        handleUnauthenticated();
+    });
 });
 
 // 检测API基础路径
@@ -89,6 +94,44 @@ function ensureStaticFilePaths() {
     });
     
     console.log('静态文件路径修正完成');
+}
+
+function checkLoginStatus() {
+    return fetch(loginCheckUrl, {
+        method: 'GET',
+        credentials: 'include',
+        redirect: 'follow'
+    }).then(function(response) {
+        if (!response.ok) {
+            return false;
+        }
+        var responseUrl = new URL(response.url, window.location.origin);
+        if (responseUrl.pathname.endsWith('/require_login.php')) {
+            return false;
+        }
+        return response.text().then(function(text) {
+            if (typeof text === 'string' && /登录|login|用户名|password/i.test(text)) {
+                return false;
+            }
+            return true;
+        }).catch(function() {
+            return true;
+        });
+    }).catch(function() {
+        return false;
+    });
+}
+
+function handleUnauthenticated() {
+    $('#login-alert').removeClass('d-none');
+    $('#btn-upload').prop('disabled', true);
+    $('#btn-create-dir').prop('disabled', true);
+    $('#btn-create-symlink').prop('disabled', true);
+    $('#btn-submit-upload').prop('disabled', true);
+    $('#btn-submit-create-dir').prop('disabled', true);
+    $('#btn-submit-create-symlink').prop('disabled', true);
+    $('#file-list').html('<div class="text-center text-danger py-5"><i class="fa fa-lock fa-2x"></i><p class="mt-2">请先登录后再访问文件管理功能。</p></div>');
+    $('#directory-tree').html('<div class="text-center text-danger py-5"><i class="fa fa-lock fa-2x"></i><p class="mt-2">请先登录后再访问目录树。</p></div>');
 }
 
 // 绑定事件
