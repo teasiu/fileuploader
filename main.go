@@ -751,7 +751,6 @@ func main() {
 	mux.HandleFunc("/filesuploader/api/directory/symlink", handleCreateSymlink)
 	mux.HandleFunc("/filesuploader/api/file/rename", handleRenameFile)
 	mux.HandleFunc("/filesuploader/api/file/delete/", handleDeleteFile)
-	mux.HandleFunc("/api/auth/status", handleAuthStatus)
 	mux.HandleFunc("/filesuploader/api/auth/status", handleAuthStatus)
 
 	srv := &http.Server{
