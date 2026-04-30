@@ -6,7 +6,6 @@ let uploadModal = null;
 let createDirModal = null;
 let createSymlinkModal = null;
 let apiBasePath = ''; // API基础路径
-let loginCheckUrl = window.location.origin + '/require_login.php';
 
 // 初始化函数
 $(document).ready(function() {
@@ -97,7 +96,8 @@ function ensureStaticFilePaths() {
 }
 
 function checkLoginStatus() {
-    return fetch(loginCheckUrl, {
+    var authStatusUrl = apiBasePath ? apiBasePath + 'api/auth/status' : '/api/auth/status';
+    return fetch(authStatusUrl, {
         method: 'GET',
         credentials: 'include',
         redirect: 'follow'
@@ -105,17 +105,10 @@ function checkLoginStatus() {
         if (!response.ok) {
             return false;
         }
-        var responseUrl = new URL(response.url, window.location.origin);
-        if (responseUrl.pathname.endsWith('/require_login.php')) {
-            return false;
-        }
-        return response.text().then(function(text) {
-            if (typeof text === 'string' && /登录|login|用户名|password/i.test(text)) {
-                return false;
-            }
-            return true;
+        return response.json().then(function(data) {
+            return data && data.loggedIn === true;
         }).catch(function() {
-            return true;
+            return false;
         });
     }).catch(function() {
         return false;

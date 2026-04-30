@@ -105,17 +105,65 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, ErrorResponse{Error: msg})
 }
 
-func isLoggedIn(r *http.Request) bool {
-	cookie, err := r.Cookie("logged_in")
-	return err == nil && cookie.Value == "1"
-}
-
 func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"loggedIn": isLoggedIn(r)})
+
+	targetScheme := "http"
+	if r.TLS != nil {
+		targetScheme = "https"
+	}
+	targetURL := fmt.Sprintf("%s://%s/require_login.php", targetScheme, r.Host)
+
+	req, err := http.NewRequest(http.MethodGet, targetURL, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("无法创建登录检测请求: %v", err))
+		return
+	}
+
+	if cookie := r.Header.Get("Cookie"); cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	req.Header.Set("User-Agent", r.Header.Get("User-Agent"))
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("登录检测请求失败: %v", err))
+		return
+	}
+	defer resp.Body.Close()
+
+	authenticated := false
+	if resp.StatusCode == http.StatusOK {
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("读取登录检测响应失败: %v", err))
+			return
+		}
+		lower := strings.ToLower(string(body))
+		if strings.Contains(lower, "login") || strings.Contains(lower, "登录") || strings.Contains(lower, "用户名") || strings.Contains(lower, "password") || strings.Contains(lower, "pwd") || strings.Contains(lower, "password") || strings.Contains(lower, "form") {
+			authenticated = false
+		} else {
+			authenticated = true
+		}
+	} else if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		authenticated = false
+	} else if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		authenticated = false
+	} else {
+		authenticated = true
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"loggedIn": authenticated})
 }
 
 func listDirectory(path string) ([]FileInfo, error) {
@@ -691,6 +739,7 @@ func main() {
 	mux.HandleFunc("/api/directory/symlink", handleCreateSymlink)
 	mux.HandleFunc("/api/file/rename", handleRenameFile)
 	mux.HandleFunc("/api/file/delete/", handleDeleteFile)
+	mux.HandleFunc("/api/auth/status", handleAuthStatus)
 
 	mux.HandleFunc("/filesuploader", handleFilesUploaderIndex)
 	mux.HandleFunc("/filesuploader/", handleFilesUploaderIndex)
