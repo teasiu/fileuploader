@@ -1,0 +1,360 @@
+/* 自定义样式 */
+
+/* 目录树样式 */
+.directory-tree {
+    font-size: 0.9rem;
+}
+
+.tree-item {
+    padding: 2px 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+}
+
+.tree-item:hover {
+    background-color: #f8f9fa;
+}
+
+.tree-item.active {
+    background-color: #e9ecef;
+    font-weight: bold;
+}
+
+.toggle {
+    width: 20px;
+    text-align: center;
+    cursor: pointer;
+    user-select: none;
+}
+
+.icon {
+    width: 20px;
+    text-align: center;
+    margin-right: 5px;
+}
+
+.tree-children {
+    padding-left: 20px;
+}
+
+/* 文件列表布局 */
+#file-list {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 20px;
+    padding: 20px;
+    overflow-y: auto;
+    max-height: calc(100vh - 120px);
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: #6c757d #f8f9fa;
+}
+
+/* 优化滚动性能 */
+#file-list {
+    contain: layout style paint;
+    will-change: scroll-position;
+}
+
+/* 文件卡片样式 */
+.file-card {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    height: 100%;
+    min-height: 200px;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    overflow: hidden;
+    background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+}
+
+.file-card:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    border-color: #007bff;
+}
+
+.file-card:active {
+    transform: translateY(-2px) scale(0.98);
+    transition-duration: 0.1s;
+}
+
+.file-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.file-icon {
+    font-size: 2.5rem;
+    margin-bottom: 15px;
+    text-align: center;
+    padding: 15px;
+    border-radius: 50%;
+    background: rgba(0, 123, 255, 0.05);
+    display: inline-block;
+    margin-left: auto;
+    margin-right: auto;
+    transition: all 0.3s ease;
+}
+
+.file-card:hover .file-icon {
+    transform: scale(1.1);
+    background: rgba(0, 123, 255, 0.1);
+}
+
+.file-name {
+    font-weight: 600;
+    margin-bottom: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.95rem;
+    color: #212529;
+    transition: color 0.3s ease;
+}
+
+.file-card:hover .file-name {
+    color: #007bff;
+}
+
+.file-info {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid #f1f3f4;
+}
+
+.file-card:hover .file-info {
+    color: #495057;
+}
+
+/* 右键菜单样式 */
+.context-menu {
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: 0.5rem 0;
+    min-width: 120px;
+}
+
+.context-menu a {
+    display: block;
+    padding: 0.5rem 1rem;
+    color: #212529;
+    text-decoration: none;
+}
+
+.context-menu a:hover {
+    background-color: #f8f9fa;
+}
+
+/* 上传进度条样式 */
+.upload-progress {
+    margin-top: 1rem;
+}
+
+/* 拖拽上传样式 */
+.dropzone {
+    border: 2px dashed #ced4da;
+    border-radius: 0.25rem;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.dropzone.active {
+    border-color: #007bff;
+    background-color: rgba(0,123,255,0.05);
+}
+
+/* 响应式调整 */
+@media (max-width: 1400px) {
+    #file-list {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 18px;
+    }
+}
+
+@media (max-width: 1200px) {
+    #file-list {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+    }
+    
+    .file-card {
+        min-height: 180px;
+    }
+    
+    .file-icon {
+        font-size: 2rem;
+        padding: 12px;
+    }
+}
+
+@media (max-width: 992px) {
+    #file-list {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+        padding: 16px;
+    }
+    
+    .file-card {
+        min-height: 160px;
+    }
+    
+    .file-icon {
+        font-size: 1.8rem;
+        padding: 10px;
+    }
+}
+
+@media (max-width: 768px) {
+    .directory-tree {
+        font-size: 0.8rem;
+    }
+    
+    #file-list {
+        grid-template-columns: 1fr;
+        gap: 12px;
+        padding: 12px;
+    }
+    
+    .file-card {
+        min-height: 140px;
+    }
+    
+    .file-icon {
+        font-size: 1.5rem;
+        padding: 8px;
+    }
+    
+    .file-name {
+        font-size: 0.9rem;
+    }
+    
+    .file-info {
+        font-size: 0.8rem;
+    }
+}
+
+/* 平板竖屏优化 */
+@media (max-width: 768px) and (orientation: portrait) {
+    #file-list {
+        max-height: calc(100vh - 140px);
+    }
+}
+
+/* 移动设备优化 */
+@media (max-width: 576px) {
+    #file-list {
+        gap: 10px;
+        padding: 10px;
+    }
+    
+    .file-card {
+        min-height: 130px;
+    }
+}
+
+/* 加载动画 */
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(0,123,255,.3);
+    border-radius: 50%;
+    border-top-color: #007bff;
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Toast 样式 */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1055;
+}
+
+/* 空状态和加载状态样式 */
+#file-list > div.text-center {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 300px;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #f8f9fa;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #6c757d;
+    border-radius: 5px;
+    border: 2px solid #f8f9fa;
+    transition: background 0.3s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #495057;
+}
+
+::-webkit-scrollbar-thumb:active {
+    background: #343a40;
+}
+
+/* Firefox滚动条 */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #6c757d #f8f9fa;
+}
+
+/* 滚动条角落 */
+::-webkit-scrollbar-corner {
+    background: #f8f9fa;
+}
+
+/* 滚动指示器 */
+#file-list::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #007bff, #28a745, #ffc107, #dc3545);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.3s ease;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+#file-list:hover::before {
+    transform: scaleX(1);
+}
+
+/* 滚动时的视觉反馈 */
+#file-list.scrolling {
+    opacity: 0.95;
+    transition: opacity 0.1s ease;
+}
+
+#file-list:not(.scrolling) {
+    opacity: 1;
+    transition: opacity 0.3s ease;
+}
