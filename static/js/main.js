@@ -6,7 +6,7 @@ let uploadModal = null;
 let createDirModal = null;
 let createSymlinkModal = null;
 let apiBasePath = ''; // API基础路径
-let loginCheckUrl = '/require_login.php';
+let loginCheckUrl = window.location.origin + '/require_login.php';
 
 // 初始化函数
 $(document).ready(function() {
